@@ -1,0 +1,132 @@
+{
+  "name": "receptionist errors",
+  "nodes": [
+    {
+      "id": "dddefecc-e560-597c-a21a-f7b26b230658",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "16f0b1da-633b-5168-87ee-9fa21565d43f",
+      "name": "Get execution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{N8N_BASE_URL}}/api/v1/executions/{{ $json.execution.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "includeData",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "{{CRED_N8N}}",
+          "name": "receptionist n8n API"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "549f7933-4904-523b-9cb7-97446a1b438c",
+      "name": "Build failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Pulls the original webhook payload out of the failed execution, so it can be replayed.\nconst trig = $('Error Trigger').first().json;\nconst exec = $input.first().json;\nconst run = exec?.data?.resultData?.runData ?? {};\nconst body = run.Webhook?.[0]?.data?.main?.[0]?.[0]?.json?.body ?? null;\nreturn [{ json: {\n  step: trig.execution?.lastNodeExecuted ?? 'unknown',\n  error: String(trig.execution?.error?.message ?? 'unknown error').slice(0, 500),\n  payload: JSON.stringify(body ?? { execution_id: trig.execution?.id }),\n  message_id: body?.message_id ?? '',\n} }];\n"
+      }
+    },
+    {
+      "id": "2f069f1b-f3f3-5fd0-bce1-7b794294f435",
+      "name": "Save failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with failed as (\n  insert into failed_events (step, payload, error) values ($1, $2::jsonb, $3) returning id\n)\nupdate message_log set status = 'failed', error = $3 where message_id = $4",
+        "options": {
+          "queryReplacement": "={{ [$json.step, $json.payload, $json.error, $json.message_id] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "{{CRED_SUPABASE}}",
+          "name": "receptionist Supabase"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get execution": {
+      "main": [
+        [
+          {
+            "node": "Build failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build failure": {
+      "main": [
+        [
+          {
+            "node": "Save failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

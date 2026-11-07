@@ -6,6 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
+CONFIG_DIR = ROOT / "config"
 load_dotenv(ROOT / ".env")
 
 # GoHighLevel API v2. Checked in the official docs on 2026-11-07.
@@ -30,6 +31,14 @@ def env(name: str) -> str:
             f"{name} is not set. Add it to .env (names are in .env.example)."
         )
     return value
+
+
+def n8n_base_url() -> str:
+    url = env("N8N_BASE_URL").rstrip("/")
+    # GHL and the test scripts call the webhook from outside the server.
+    if not url.startswith("https://"):
+        raise ConfigError("N8N_BASE_URL must start with https://")
+    return url
 
 
 def ghl_headers() -> dict[str, str]:

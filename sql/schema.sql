@@ -36,6 +36,9 @@ create table if not exists message_log (
     latency_ms int
 );
 
+-- processing -> done, or failed (the error workflow sets it, and the replay can claim it again).
+alter table message_log add column if not exists status text not null default 'processing';
+
 -- GHL calls that failed, kept with the payload so scripts/replay_failed.py can run them again.
 create table if not exists failed_events (
     id bigserial primary key,
