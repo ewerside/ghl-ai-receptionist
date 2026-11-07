@@ -1,0 +1,177 @@
+# Values with commas are quoted, or YAML splits them.
+# Business facts for Kestrel Air & Plumbing, a made-up home services company in Austin, Texas.
+# The articles in kb/articles are written from these facts.
+# `values` lists every price, time and key term in a fact, written exactly as the articles write
+# them, so scripts/load_kb.py can check the articles and scripts/make_conversations.py can check
+# the answer key.
+
+- id: company
+  topic: company
+  text: >-
+    Kestrel Air & Plumbing repairs, maintains and installs air conditioning, heating and plumbing
+    for homes in the Austin area. We work on homes only, not on commercial buildings. We service all major
+    brands of equipment. Our technicians are licensed and insured.
+  values: [homes only, all major brands, licensed and insured]
+
+- id: hours
+  topic: hours
+  text: >-
+    Regular appointments run Monday to Saturday, 8 am to 6 pm Central Time. We are closed for
+    regular appointments on Sundays and on major holidays. The chat on our website answers
+    questions and books visits 24/7.
+  values: [Monday to Saturday, 8 am to 6 pm, Sundays, 24/7]
+
+- id: visit_window
+  topic: booking
+  text: >-
+    Every visit is booked as a 2-hour arrival window. To book, we need your name, your ZIP code,
+    the service you need, and whether you own the home.
+  values: [2-hour arrival window, ZIP code]
+
+- id: service_area
+  topic: area
+  text: >-
+    We serve Austin, Round Rock, Pflugerville and Cedar Park. We only book visits in these ZIP
+    codes: 78701, 78702, 78703, 78704, 78705, 78721, 78722, 78723, 78724, 78727, 78728, 78729,
+    78731, 78741, 78744, 78745, 78746, 78748, 78749, 78750, 78751, 78752, 78753, 78756, 78757,
+    78758, 78759 (Austin), 78664, 78665, 78681 (Round Rock), 78660 (Pflugerville) and 78613
+    (Cedar Park). We do not serve other ZIP codes, including Georgetown, San Marcos and San Antonio.
+  values: [Austin, Round Rock, Pflugerville, Cedar Park]
+
+- id: trip_fee
+  topic: pricing
+  text: >-
+    A repair visit has an $89 diagnostic fee. The technician finds the problem and gives you a
+    written price before any work starts. If you approve the repair, the $89 fee is waived.
+  values: [$89, waived]
+
+- id: emergency
+  topic: emergency
+  text: >-
+    We treat these as emergencies: no cooling when it is above 90°F outside, no heat when it is
+    below 40°F outside, an active water leak, and a sewer backup. Emergencies get the first open
+    visit today or tomorrow. Emergency visits are available 24/7. Visits outside regular hours
+    (evenings, Sundays and holidays) have a $149 after-hours fee on top of the $89 diagnostic fee.
+  values: [above 90°F, below 40°F, active water leak, sewer backup, first open visit, $149]
+
+- id: emergency_safety
+  topic: emergency
+  text: >-
+    If you smell gas, leave the home first and call 911 and your gas company from outside. Do not
+    use switches or the thermostat. For an active leak, turn off the main water valve while you
+    wait for us.
+  values: ["smell gas", "911", "main water valve"]
+
+- id: cancel
+  topic: booking
+  text: >-
+    You can cancel or reschedule for free up to 24 hours before your arrival window. Changes made
+    less than 24 hours ahead have a $50 late change fee.
+  values: [24 hours, $50]
+
+- id: ac_repair_prices
+  topic: pricing
+  text: >-
+    Typical AC repair prices: capacitor replacement $150 to $350, refrigerant leak repair $400 to
+    $1,500, blower motor replacement $450 to $900, compressor replacement $1,800 to $3,500.
+  values: ["$150 to $350", "$400 to $1,500", "$450 to $900", "$1,800 to $3,500"]
+
+- id: heating_repair_prices
+  topic: pricing
+  text: >-
+    Typical heating repair prices: igniter replacement $150 to $400, furnace repair $200 to $900,
+    heat pump repair $250 to $1,200.
+  values: ["$150 to $400", "$200 to $900", "$250 to $1,200"]
+
+- id: install_prices
+  topic: install
+  text: >-
+    A new central AC system with a matching furnace or air handler costs $6,500 to $14,000
+    installed. A heat pump system costs $8,000 to $16,000 installed. A furnace alone costs $3,500 to
+    $7,500 installed. The price includes the city permit, haul-away of the old equipment and a load
+    calculation.
+  values: ["$6,500 to $14,000", "$8,000 to $16,000", "$3,500 to $7,500", "city permit", "load calculation"]
+
+- id: install_estimate
+  topic: install
+  text: >-
+    Install estimates are a free in-home estimate. There is no diagnostic fee. The visit takes
+    about 1 hour, and you get a written quote with 3 options.
+  values: [free in-home estimate, 1 hour, 3 options]
+
+- id: owner_rule
+  topic: install
+  text: >-
+    Installs and system replacements need the property owner to request the estimate and sign the
+    quote. Tenants can ask their landlord or property manager to contact us. Tenants can book
+    repair visits.
+  values: [property owner, landlord or property manager]
+
+- id: tune_up
+  topic: maintenance
+  text: >-
+    A tune-up costs $119 per system. We recommend one for cooling in spring and one for heating in
+    fall.
+  values: [$119, spring, fall]
+
+- id: care_plan
+  topic: maintenance
+  text: >-
+    The Kestrel Care plan costs $19 per month. It includes 2 tune-ups per year, 15% off repairs, no
+    diagnostic fee and priority booking.
+  values: [Kestrel Care, $19 per month, 2 tune-ups per year, 15% off repairs]
+
+- id: water_heater
+  topic: plumbing
+  text: >-
+    Water heater repair costs $200 to $650. A new tank water heater costs $1,800 to $3,200
+    installed. A tankless water heater costs $3,500 to $6,000 installed.
+  values: ["$200 to $650", "$1,800 to $3,200", "$3,500 to $6,000"]
+
+- id: drains
+  topic: plumbing
+  text: >-
+    Drain clearing costs $175 to $350. A sewer camera inspection costs $250.
+  values: [$175 to $350, $250]
+
+- id: leaks
+  topic: plumbing
+  text: >-
+    Leak repair costs $250 to $900, depending on where the pipe is and how easy it is to reach.
+  values: [$250 to $900]
+
+- id: warranty
+  topic: warranty
+  text: >-
+    Repairs have a 1-year warranty on parts and labor. New installs have a 10-year parts warranty
+    from the manufacturer when the equipment is registered within 60 days, and a 2-year labor
+    warranty from us. We register the equipment for you.
+  values: [1-year warranty, 10-year parts warranty, 60 days, 2-year labor warranty]
+
+- id: financing
+  topic: payment
+  text: >-
+    Financing is available for jobs over $2,500, with approved credit. Options are 0% interest for
+    18 months, or fixed monthly payments for 60 to 120 months.
+  values: ["$2,500", "approved credit", "18 months", "60 to 120 months"]
+
+- id: payment
+  topic: payment
+  text: >-
+    Payment is due when the work is done. We take credit and debit cards, checks and bank transfer.
+    Veterans and seniors aged 65 and over get 10% off repairs.
+  values: [credit and debit cards, 10% off repairs]
+
+- id: billing_help
+  topic: payment
+  text: >-
+    Questions about a bill, a refund or a complaint go to our office team. The chat passes your
+    message to them, and they reply within 1 business day.
+  values: [office team, 1 business day]
+
+- id: careers
+  topic: careers
+  text: >-
+    We hire HVAC technicians and plumbers. To apply, send your resume to jobs@kestrel.example.com.
+    The chat cannot take job applications.
+  values: [jobs@kestrel.example.com]
