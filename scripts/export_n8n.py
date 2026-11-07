@@ -13,8 +13,9 @@ import httpx
 # Scripts run as files (python scripts/x.py), so the repo root is not on sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config import ROOT, ConfigError, env, n8n_base_url
 from deploy_n8n import checked, find_workflow, marker_values
+
+from config import ROOT, ConfigError, env, n8n_base_url
 
 N8N_DIR = ROOT / "n8n"
 WORKFLOWS = {
