@@ -1,0 +1,51 @@
+id,situation,intent,tier,should_book,final_stage,handoff,facts
+c30,out_of_area,out_of_area,cold,no,Lost,no,service_area
+c33,handoff,billing_or_complaint,,no,Needs Human,yes,billing_help
+c14,repair,book_service,warm,yes,Booked,no,trip_fee
+c31,out_of_area,out_of_area,cold,no,Lost,no,service_area
+c06,emergency,emergency,hot,no,Qualified,no,emergency;emergency_safety
+c25,tenant_install,install_quote,warm,no,Qualified,no,owner_rule
+c46,question,question,,no,New Lead,no,hours
+c12,install_owner,install_quote,hot,no,Qualified,no,install_estimate
+c10,install_owner,install_quote,hot,yes,Booked,no,install_estimate
+c49,question,question,,no,New Lead,no,care_plan
+c44,question,question,,no,New Lead,no,trip_fee
+c19,repair,book_service,warm,no,Qualified,no,trip_fee
+c38,job_or_spam,job_seeker,cold,no,Lost,no,careers
+c13,install_owner,install_quote,hot,no,Qualified,no,install_estimate
+c04,emergency,emergency,hot,yes,Booked,no,emergency
+c50,question,question,,no,New Lead,no,emergency
+c32,handoff,billing_or_complaint,,no,Needs Human,yes,billing_help
+c18,repair,book_service,warm,yes,Booked,no,trip_fee
+c07,emergency,emergency,hot,no,Qualified,no,emergency
+c41,job_or_spam,spam,cold,no,Lost,no,
+c09,install_owner,install_quote,hot,yes,Booked,no,install_estimate;install_prices
+c28,out_of_area,out_of_area,cold,no,Lost,no,service_area
+c17,repair,book_service,warm,yes,Booked,no,water_heater;trip_fee
+c27,out_of_area,out_of_area,cold,no,Lost,no,service_area
+c11,install_owner,install_quote,hot,yes,Booked,no,install_estimate
+c48,question,question,,no,New Lead,no,tune_up
+c03,emergency,emergency,hot,yes,Booked,no,emergency
+c47,question,question,,no,New Lead,no,financing
+c37,handoff,billing_or_complaint,,no,Needs Human,yes,billing_help
+c21,tenant_install,install_quote,warm,no,Qualified,no,owner_rule
+c23,tenant_install,install_quote,warm,no,Qualified,no,owner_rule
+c39,job_or_spam,job_seeker,cold,no,Lost,no,careers
+c01,emergency,emergency,hot,yes,Booked,no,emergency
+c35,handoff,billing_or_complaint,,no,Needs Human,yes,billing_help
+c40,job_or_spam,job_seeker,cold,no,Lost,no,careers
+c36,handoff,billing_or_complaint,,no,Needs Human,yes,billing_help
+c02,emergency,emergency,hot,yes,Booked,no,emergency;emergency_safety
+c22,tenant_install,install_quote,warm,no,Qualified,no,owner_rule
+c05,emergency,emergency,hot,yes,Booked,no,emergency
+c15,repair,book_service,warm,yes,Booked,no,tune_up
+c16,repair,book_service,warm,yes,Booked,no,drains
+c08,install_owner,install_quote,hot,yes,Booked,no,install_estimate
+c45,question,question,,no,New Lead,no,warranty
+c34,handoff,billing_or_complaint,,no,Needs Human,yes,billing_help
+c29,out_of_area,out_of_area,cold,no,Lost,no,service_area
+c24,tenant_install,install_quote,warm,no,Qualified,no,owner_rule
+c42,job_or_spam,spam,cold,no,Lost,no,
+c43,job_or_spam,spam,cold,no,Lost,no,
+c26,out_of_area,out_of_area,cold,no,Lost,no,service_area
+c20,repair,book_service,warm,no,Qualified,no,tune_up
