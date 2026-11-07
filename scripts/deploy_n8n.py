@@ -85,10 +85,9 @@ def publish(client: httpx.Client, workflow: dict) -> str:
     else:
         wf_id = checked(client.post("/workflows", json=body)).json()["id"]
         status = "created"
-    # A workflow with only an Error Trigger runs without being active.
-    if any(n["type"] == "n8n-nodes-base.webhook" for n in workflow["nodes"]):
-        checked(client.post(f"/workflows/{wf_id}/activate"))
-        status += ", active"
+    # In n8n 2.x the error workflow also has to be active, or it never runs.
+    checked(client.post(f"/workflows/{wf_id}/activate"))
+    status += ", active"
     print(f"{workflow['name']}: {status} ({wf_id})")
     return wf_id
 
