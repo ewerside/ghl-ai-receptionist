@@ -3,5 +3,4 @@
 __pycache__/
 .ruff_cache/
 .fastembed_cache/
-video/out/
 config/
