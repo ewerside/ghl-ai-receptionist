@@ -20,4 +20,6 @@ Work in progress. The full write-up comes at the end of the project.
 - In n8n 2.26 the error workflow only runs when it is active, so the deploy script activates both workflows.
 - The test scripts play the customer: they store each message in GHL through the API and then call the n8n webhook with the same ids that a GHL workflow webhook would send.
 - The n8n retry is a fixed wait (3 s, 4 tries) on every GHL call, not an exponential backoff. With the sandbox limit of 25 requests per 10 s that is enough for one conversation at a time.
+- GHL's opportunity search lags a few seconds behind updates. Inside a conversation the turns are far enough apart, and no contact ended with two opportunities, but the eval reads the final stage 30 s after the last conversation.
+- Model choice: Claude Sonnet 5.5 is the default because it passed every acceptance check; Claude Haiku 5.5 had 2 conversations with an invented claim against a limit of 1. Details in `docs/report.md`.
 - The docs list `Version: v3` for the message routes. `2021-07-28` also works, so I use one version for every call.

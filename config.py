@@ -14,8 +14,7 @@ GHL_BASE_URL = "https://services.leadconnectorhq.com"
 GHL_VERSION = "2021-07-28"
 
 DEFAULTS = {
-    "LLM_MODEL": "claude-haiku-5-5",
-    "EVAL_MODEL": "claude-sonnet-5-5",
+    "LLM_MODEL": "claude-sonnet-5-5",
 }
 
 
