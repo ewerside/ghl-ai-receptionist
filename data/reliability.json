@@ -1,0 +1,34 @@
+[
+  {
+    "test": "Invalid Claude API key",
+    "expected": "fixed rule scores the lead, one reply, task for a person, card in Needs Human",
+    "result": "used_fallback=True, outcome handoff, stage Needs Human, score 80 (hot), replies sent 1",
+    "lost": 0,
+    "duplicate_replies": 0,
+    "pass": true
+  },
+  {
+    "test": "GHL API answers with errors (invalid token)",
+    "expected": "event saved to failed_events, replay finishes it, one reply",
+    "result": "first run: status failed, 1 event queued; after replay: status done, 0 left in queue, replies sent 1",
+    "lost": 0,
+    "duplicate_replies": 0,
+    "pass": true
+  },
+  {
+    "test": "Offered time taken before the customer confirms",
+    "expected": "no booking on the taken time, the agent offers the next open time",
+    "result": "first turn offer_slots; after the time was taken: offer_slots, events at 08:00: 1, events for this customer: 0. Reply: Sorry for the confusion, the Thu, Nov 12 8:00 AM slot I mentioned is no longer open, so I can't book it. Visits are booked as 2-hour arrival windows (from our \"How do I book a visit?\" page). Our first openings now are Thu, Nov 12, 10:00 AM to 12:00 PM, or Thu, Nov 12, 12:00 PM to 2:00 PM. Which would you like?",
+    "lost": 0,
+    "duplicate_replies": 0,
+    "pass": true
+  },
+  {
+    "test": "Same message delivered twice at the same moment",
+    "expected": "one run answers, the other stops as duplicate, one reply",
+    "result": "answers ['done', 'duplicate'], replies sent 1",
+    "lost": 0,
+    "duplicate_replies": 0,
+    "pass": true
+  }
+]
