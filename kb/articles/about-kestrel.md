@@ -27,3 +27,7 @@ Our technicians are licensed and insured. Every visit is booked as a 2-hour arri
 ## How to reach us
 
 The chat on our website answers questions and books visits 24/7. Regular appointments run Monday to Saturday, 8 am to 6 pm Central Time.
+
+## Talking to a person
+
+If you want to talk to a person, or the chat cannot answer your question, the chat passes your message to our office team. They reply within 1 business day.

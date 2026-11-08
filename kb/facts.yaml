@@ -166,8 +166,9 @@
   topic: payment
   text: >-
     Questions about a bill, a refund or a complaint go to our office team. The chat passes your
-    message to them, and they reply within 1 business day.
-  values: [office team, 1 business day]
+    message to them, and they reply within 1 business day. The same goes for any question the
+    chat cannot answer and for anyone who asks to talk to a person.
+  values: [office team, 1 business day, talk to a person]
 
 - id: careers
   topic: careers

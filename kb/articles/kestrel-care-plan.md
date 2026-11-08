@@ -1,10 +1,10 @@
 ---
 id: kestrel-care-plan
-title: What is the Kestrel Care plan?
+title: What is the Kestrel Care maintenance plan?
 topic: maintenance
 ---
 
-The Kestrel Care plan costs $19 per month.
+The Kestrel Care plan is our maintenance plan. It costs $19 per month.
 
 ## What you get
 
