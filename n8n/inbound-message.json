@@ -424,8 +424,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2640,
-        300
+        0,
+        1200
       ],
       "parameters": {
         "method": "POST",
@@ -465,8 +465,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2860,
-        300
+        220,
+        1200
       ],
       "parameters": {
         "jsCode": "// Checks Claude's answer, applies the business guards, and plans the GHL actions.\nconst n = $('Normalize').first().json;\nconst ctx = $('Build request').first().json.context;\nconst res = $input.first().json;\nconst AREA = new Set([\"78701\", \"78702\", \"78703\", \"78704\", \"78705\", \"78721\", \"78722\", \"78723\", \"78724\", \"78727\", \"78728\", \"78729\", \"78731\", \"78741\", \"78744\", \"78745\", \"78746\", \"78748\", \"78749\", \"78750\", \"78751\", \"78752\", \"78753\", \"78756\", \"78757\", \"78758\", \"78759\", \"78664\", \"78665\", \"78681\", \"78660\", \"78613\"]);\nconst INTENTS = ['question', 'book_service', 'install_quote', 'emergency', 'out_of_area', 'billing_or_complaint', 'job_seeker', 'spam'];\nconst TIERS = ['hot', 'warm', 'cold'];\nconst ACTIONS = ['answer_only', 'ask_missing_info', 'offer_slots', 'book', 'decline', 'handoff'];\n\nlet turn = null;\nlet problem = null;\nconst block = Array.isArray(res.content) ? res.content.find((c) => c.type === 'tool_use' && c.name === 'record_turn') : null;\nif (!block) {\n  problem = res.error\n    ? 'Claude call failed: ' + String(res.error.message ?? JSON.stringify(res.error)).slice(0, 200)\n    : 'no record_turn call (stop_reason ' + res.stop_reason + ')';\n} else {\n  turn = block.input;\n  const bad = [];\n  if (!Number.isInteger(turn.score) || turn.score < 0 || turn.score > 100) bad.push('score out of range');\n  if (!INTENTS.includes(turn.intent)) bad.push('unknown intent');\n  if (!TIERS.includes(turn.tier)) bad.push('unknown tier');\n  if (!ACTIONS.includes(turn.next_action)) bad.push('unknown next_action');\n  if (typeof turn.reply !== 'string' || !turn.reply.trim()) bad.push('empty reply');\n  const unknown = (turn.articles ?? []).filter((a) => !ctx.article_ids.includes(a));\n  if (unknown.length) bad.push('cites articles not in context: ' + unknown.join(', '));\n  if (bad.length) problem = 'invalid AI output: ' + bad.join('; ');\n}\n\n// Fixed rule when the AI fails or answers out of bounds: score from keywords, a person takes over.\nconst usedFallback = problem !== null;\nif (usedFallback) {\n  const t = n.body.toLowerCase();\n  const urgent = /(no (ac|air|heat|cooling|hot water)|stopped working|not working|leak|flood|sewage|backup|burst|gas)/.test(t);\n  turn = {\n    intent: urgent ? 'emergency' : 'question',\n    service: null,\n    zip: (t.match(/\\b7\\d{4}\\b/) ?? [null])[0],\n    urgency: urgent ? 'emergency' : null,\n    is_homeowner: null,\n    score: urgent ? 80 : 50,\n    tier: urgent ? 'hot' : 'warm',\n    reason: `Fixed rule (${urgent ? 'emergency words found' : 'no emergency words'}), because ${problem}`.slice(0, 300),\n    reply: 'Thanks for your message. A member of our office team will reply within 1 business day.',\n    articles: [],\n    next_action: 'handoff',\n    slot_start: null,\n  };\n}\n\nlet action = turn.next_action;\nlet reply = turn.reply.trim();\nconst guards = [];\nconst zip = turn.zip ?? ctx.known.zip_code ?? null;\nconst slotLabel = (s) => s.label;\n\n// Guard 1: a ZIP outside the service area is always a polite decline, whatever the AI said\n// (except a billing or complaint handoff, which still goes to a person).\nif (!usedFallback && zip && !AREA.has(String(zip)) && action !== 'handoff') {\n  guards.push(`ZIP ${zip} is outside the service area`);\n  const aiDeclined = action === 'decline';\n  action = 'decline';\n  turn.intent = 'out_of_area';\n  turn.tier = 'cold';\n  turn.score = Math.min(turn.score, 20);\n  turn.reason = `ZIP ${zip} is outside the service area (fixed guard; the AI wanted ${turn.next_action}).`;\n  if (!aiDeclined) reply = `Thanks for reaching out. We serve Austin, Round Rock, Pflugerville and Cedar Park, and ${zip} is outside our service area, so we can't book a visit there. We're sorry we can't help this time.`;\n}\n// Guard 2: installs need the property owner.\nif (!usedFallback && turn.intent === 'install_quote' && turn.is_homeowner === false && ['offer_slots', 'book'].includes(action)) {\n  guards.push('install request from a tenant');\n  action = 'answer_only';\n  turn.tier = 'warm';\n  turn.reason = 'Tenant asking for an install; the property owner has to request it (fixed guard).';\n  reply = 'Installs and system replacements need the property owner to request the estimate and sign the quote. Please ask your landlord or property manager to contact us, and we will set up a free in-home estimate.';\n}\n// Guard 3: a booking must name a time that is still open.\nif (action === 'book' && !ctx.slots.some((s) => s.start === turn.slot_start)) {\n  guards.push(`slot ${turn.slot_start} is not in the open times`);\n  action = 'offer_slots';\n  reply = ctx.slots.length >= 2\n    ? `Sorry, that time is no longer open. The next open visits are ${slotLabel(ctx.slots[0])} and ${slotLabel(ctx.slots[1])}. Which one works for you?`\n    : reply;\n}\nif (['offer_slots', 'book'].includes(action) && ctx.slots.length === 0) {\n  guards.push('no open times in the next 8 days');\n  action = 'handoff';\n  reply = 'Thanks! Our calendar is full for the next few days, so a member of our office team will reply within 1 business day to find a time.';\n}\n\nconst tagFor = { out_of_area: 'out-of-area', spam: 'spam', job_seeker: 'job-seeker' };\nconst fields = { ai_score: turn.score, ai_tier: turn.tier, ai_intent: turn.intent, ai_reason: turn.reason, service_type: turn.service, zip_code: zip, urgency: turn.urgency };\nconst customFields = Object.entries(fields)\n  .filter(([, v]) => v !== null && v !== undefined && v !== '')\n  .map(([k, v]) => ({ id: n.cfg.fields[k], field_value: v }));\nconst usage = res.usage ?? {};\nreturn [{\n  json: {\n    turn, action, reply, used_fallback: usedFallback, problem, guards,\n    decline_tag: tagFor[turn.intent] ?? 'out-of-area',\n    contact_update: { customFields },\n    slot_start: turn.slot_start,\n    input_tokens: usage.input_tokens ?? 0,\n    output_tokens: usage.output_tokens ?? 0,\n  },\n}];\n"
@@ -478,8 +478,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3080,
-        300
+        440,
+        1200
       ],
       "parameters": {
         "method": "PUT",
@@ -518,8 +518,8 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        3300,
-        300
+        660,
+        1200
       ],
       "parameters": {
         "mode": "expression",
@@ -533,8 +533,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3520,
-        -100
+        880,
+        800
       ],
       "parameters": {
         "method": "GET",
@@ -587,8 +587,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3740,
-        -100
+        1100,
+        800
       ],
       "parameters": {
         "jsCode": "// Second check right before booking: the time may have been taken since it was offered.\nconst d = $('Decide').first().json;\nconst free = $input.first().json;\nconst open = Object.values(free).flatMap((v) => (Array.isArray(v?.slots) ? v.slots : []));\nreturn [{ json: { still_free: open.includes(d.slot_start) } }];\n"
@@ -600,8 +600,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3960,
-        -100
+        1320,
+        800
       ],
       "parameters": {
         "conditions": {
@@ -634,8 +634,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        4180,
-        -200
+        1540,
+        700
       ],
       "parameters": {
         "method": "POST",
@@ -675,8 +675,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        4400,
-        -300
+        1760,
+        600
       ],
       "parameters": {
         "operation": "executeQuery",
@@ -702,8 +702,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4620,
-        -300
+        1980,
+        600
       ],
       "parameters": {
         "jsCode": "const d = $('Decide').first().json;\nconst event = $('Create appointment').first().json;\nreturn [{ json: { outcome: 'booked', reply: d.reply, event_id: event.id ?? null, note: `Booked a visit for ${d.slot_start}.` } }];\n"
@@ -715,8 +715,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4620,
-        -100
+        1980,
+        800
       ],
       "parameters": {
         "jsCode": "// The time was taken between the offer and the confirmation: offer the next ones.\nconst d = $('Decide').first().json;\nconst slots = $('Build request').first().json.context.slots.filter((s) => s.start !== d.slot_start);\nconst reply = slots.length\n  ? `Sorry, ${d.slot_start ? 'that time was just taken' : 'that time is not open'}. The next open visit is ${slots[0].label}${slots[1] ? `, or ${slots[1].label}` : ''}. Which one works for you?`\n  : 'Sorry, that time was just taken and our calendar is full for now. A member of our office team will reply within 1 business day.';\nreturn [{ json: { outcome: 'slot_taken', reply, event_id: null, note: `Slot ${d.slot_start} was taken before booking; offered the next one.` } }];\n"
@@ -728,8 +728,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3520,
-        150
+        880,
+        1050
       ],
       "parameters": {
         "method": "POST",
@@ -768,8 +768,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4620,
-        150
+        1980,
+        1050
       ],
       "parameters": {
         "jsCode": "const d = $('Decide').first().json;\nreturn [{ json: { outcome: 'declined', reply: d.reply, event_id: null, note: `Declined (${d.turn.intent}).` } }];\n"
@@ -781,8 +781,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3520,
-        400
+        880,
+        1300
       ],
       "parameters": {
         "method": "POST",
@@ -821,8 +821,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3740,
-        400
+        1100,
+        1300
       ],
       "parameters": {
         "method": "POST",
@@ -861,8 +861,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4620,
-        400
+        1980,
+        1300
       ],
       "parameters": {
         "jsCode": "const d = $('Decide').first().json;\nreturn [{ json: { outcome: 'handoff', reply: d.reply, event_id: null, note: 'Handed off to the office team.' } }];\n"
@@ -874,8 +874,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4620,
-        600
+        1980,
+        1500
       ],
       "parameters": {
         "jsCode": "const d = $('Decide').first().json;\nreturn [{ json: { outcome: d.action, reply: d.reply, event_id: null, note: '' } }];\n"
@@ -887,11 +887,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4840,
-        300
+        2200,
+        1200
       ],
       "parameters": {
-        "jsCode": "// Picks the pipeline stage from what happened, and writes the note for the card.\nconst n = $('Normalize').first().json;\nconst d = $('Decide').first().json;\nconst o = $input.first().json;\nconst stages = n.cfg.pipeline.stages;\nconst opp = ($('Find opportunity').first().json.opportunities ?? [])[0] ?? null;\nconst current = opp ? Object.keys(stages).find((k) => stages[k] === opp.pipelineStageId) : null;\nconst t = d.turn;\nlet stage;\nif (o.outcome === 'booked') stage = 'Booked';\nelse if (o.outcome === 'handoff') stage = 'Needs Human';\nelse if (o.outcome === 'declined') stage = 'Lost';\nelse if (current === 'Booked' || current === 'Needs Human') stage = current;\nelse if (['offer_slots', 'slot_taken'].includes(o.outcome)) stage = 'Qualified';\nelse if (['emergency', 'book_service', 'install_quote'].includes(t.intent) && t.tier !== 'cold') stage = 'Qualified';\nelse stage = current ?? 'New Lead';\nconst name = ((($('Get contact').first().json.contact ?? {}).firstName ?? '') + ' ' + (($('Get contact').first().json.contact ?? {}).lastName ?? '')).trim() || 'Chat lead';\nconst note = [\n  `AI receptionist: ${t.tier} (${t.score}), intent ${t.intent}, next action ${o.outcome}.`,\n  `Reason: ${t.reason}`,\n  d.used_fallback ? `Fixed rule used: ${d.problem}` : '',\n  d.guards.length ? `Guards: ${d.guards.join('; ')}` : '',\n  o.note,\n].filter(Boolean).join('\\n');\nreturn [{ json: { ...o, stage, stage_id: stages[stage], opportunity_id: opp?.id ?? null, opportunity_name: `${name} - ${t.service ?? t.intent}`, note } }];\n"
+        "jsCode": "// Picks the pipeline stage from what happened, and writes the note for the card.\nconst n = $('Normalize').first().json;\nconst d = $('Decide').first().json;\nconst o = $input.first().json;\nconst stages = n.cfg.pipeline.stages;\nconst opp = ($('Find opportunity').first().json.opportunities ?? [])[0] ?? null;\nconst current = opp ? Object.keys(stages).find((k) => stages[k] === opp.pipelineStageId) : null;\nconst t = d.turn;\nlet stage;\nif (o.outcome === 'booked') stage = 'Booked';\nelse if (o.outcome === 'handoff') stage = 'Needs Human';\nelse if (o.outcome === 'declined') stage = 'Lost';\nelse if (current === 'Booked' || current === 'Needs Human') stage = current;\nelse if (['offer_slots', 'slot_taken'].includes(o.outcome)) stage = 'Qualified';\nelse if (['emergency', 'book_service', 'install_quote'].includes(t.intent) && t.tier !== 'cold') stage = 'Qualified';\nelse stage = current ?? 'New Lead';\nconst name = ((($('Get contact').first().json.contact ?? {}).firstName ?? '') + ' ' + (($('Get contact').first().json.contact ?? {}).lastName ?? '')).trim() || 'Chat lead';\nconst note = [\n  `AI receptionist: ${t.tier} (${t.score}), intent ${t.intent}, next action ${o.outcome}.`,\n  `Reason: ${t.reason}`,\n  d.used_fallback ? `Fixed rule used: ${d.problem}` : '',\n  d.guards.length ? `Guards: ${d.guards.join('; ')}` : '',\n  o.note,\n].filter(Boolean).join('\\n');\nreturn [{ json: { ...o, stage, stage_id: stages[stage], opportunity_id: opp?.id ?? null, opportunity_name: `${name} - ${t.service ?? t.intent.replace(/_/g, ' ')}`, note } }];\n"
       }
     },
     {
@@ -900,8 +900,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        5060,
-        300
+        2420,
+        1200
       ],
       "parameters": {
         "conditions": {
@@ -934,8 +934,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        5280,
-        200
+        2640,
+        1100
       ],
       "parameters": {
         "method": "PUT",
@@ -974,8 +974,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        5280,
-        400
+        2640,
+        1300
       ],
       "parameters": {
         "method": "POST",
@@ -1014,8 +1014,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        5500,
-        300
+        2860,
+        1200
       ],
       "parameters": {
         "method": "POST",
@@ -1054,8 +1054,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        5720,
-        300
+        3080,
+        1200
       ],
       "parameters": {
         "method": "POST",
@@ -1094,8 +1094,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5940,
-        300
+        3300,
+        1200
       ],
       "parameters": {
         "jsCode": "// Values for message_log. Cost uses the list prices per million tokens.\nconst n = $('Normalize').first().json;\nconst d = $('Decide').first().json;\nconst f = $('Finalize').first().json;\nconst PRICES = { 'claude-haiku-5-5': [0.10, 0.50], 'claude-sonnet-5-5': [2.00, 10.00] };\nconst [pin, pout] = PRICES[n.model] ?? [0, 0];\nconst cost = (d.input_tokens * pin + d.output_tokens * pout) / 1e6;\nconst pgArray = (xs) => '{' + xs.map((x) => '\"' + String(x).replace(/[\"\\\\]/g, '') + '\"').join(',') + '}';\nreturn [{ json: {\n  values: [\n    n.message_id, d.turn.intent, d.turn.tier, d.turn.score, f.outcome, f.reply, pgArray(d.turn.articles ?? []),\n    n.model, d.used_fallback, d.problem, d.input_tokens, d.output_tokens, cost.toFixed(6), Date.now() - n.started_at, f.stage,\n  ],\n  response: { status: 'done', outcome: f.outcome, stage: f.stage, tier: d.turn.tier, intent: d.turn.intent, used_fallback: d.used_fallback, reply: f.reply },\n} }];\n"
@@ -1107,8 +1107,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        6160,
-        300
+        3520,
+        1200
       ],
       "parameters": {
         "operation": "executeQuery",
@@ -1133,8 +1133,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        6380,
-        300
+        3740,
+        1200
       ],
       "parameters": {
         "respondWith": "json",
