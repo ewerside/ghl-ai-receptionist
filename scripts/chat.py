@@ -85,7 +85,8 @@ def send_message(ids: dict, contact_id: str, text: str, model: str | None) -> di
     )
     answer = (
         resp.json()
-        if resp.headers.get("content-type", "").startswith("application/json")
+        if resp.content
+        and resp.headers.get("content-type", "").startswith("application/json")
         else {"raw": resp.text[:300]}
     )
     return {
