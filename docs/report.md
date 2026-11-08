@@ -78,6 +78,19 @@ I read 10 replies picked at random (seed 42) against the help center. My verdict
 | c10 turn 0 | ok | ok | prices and what is included are right |
 | c02 turn 1 | ok | ok | no invented fact, but it repeats the today or tomorrow rule while offering Tuesday (Monday was full); it also cites the booking page by a shortened title |
 
+## Reliability
+
+`scripts/reliability_test.py` breaks one thing at a time on the live flow and puts it back afterwards. Result: 4 of 4 tests pass, 0 lost messages, 0 duplicate replies.
+
+| Test | Expected | What happened | Pass |
+|---|---|---|---|
+| Invalid Claude API key | fixed rule scores the lead, one reply, task for a person, card in Needs Human | used_fallback=True, outcome handoff, stage Needs Human, score 80 (hot), replies sent 1 | yes |
+| GHL API answers with errors (invalid token) | event saved to failed_events, replay finishes it, one reply | first run: status failed, 1 event queued; after replay: status done, 0 left in queue, replies sent 1 | yes |
+| Offered time taken before the customer confirms | no booking on the taken time, the agent offers the next open time | first turn offer_slots; after the time was taken: offer_slots, events at 08:00: 1, events for this customer: 0. | yes |
+| Same message delivered twice at the same moment | one run answers, the other stops as duplicate, one reply | answers ['done', 'duplicate'], replies sent 1 | yes |
+
+In the taken-time test, the taken time had already left the open times list when the customer answered, so the guard in `Decide` caught it. The second check right before booking (`Recheck slot`) covers the case where the time is taken in the seconds between those two calls.
+
 ## First run and what I changed
 
 The first full run found real problems, so I fixed them and ran all 50 conversations again with both models. The first run is kept in `data/runs-1/`.

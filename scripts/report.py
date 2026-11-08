@@ -265,6 +265,29 @@ def render(results: list[dict], first: list[dict]) -> str:
                 f"| {row['id']} turn {row['turn']} | {judge} | {row['my_verdict']} | {row['note']} |"
             )
         lines.append("")
+    reliability = ROOT / "data" / "reliability.json"
+    if reliability.exists():
+        tests = json.loads(reliability.read_text(encoding="utf-8"))
+        lost = sum(t["lost"] for t in tests)
+        dupes = sum(t["duplicate_replies"] for t in tests)
+        lines += [
+            "## Reliability",
+            "",
+            f"`scripts/reliability_test.py` breaks one thing at a time on the live flow and puts it back afterwards. Result: {sum(t['pass'] for t in tests)} of {len(tests)} tests pass, {lost} lost messages, {dupes} duplicate replies.",
+            "",
+            "| Test | Expected | What happened | Pass |",
+            "|---|---|---|---|",
+        ]
+        for t in tests:
+            result = t["result"].replace("|", "/").split(" Reply: ")[0]
+            lines.append(
+                f"| {t['test']} | {t['expected']} | {result} | {'yes' if t['pass'] else 'no'} |"
+            )
+        lines += [
+            "",
+            "In the taken-time test, the taken time had already left the open times list when the customer answered, so the guard in `Decide` caught it. The second check right before booking (`Recheck slot`) covers the case where the time is taken in the seconds between those two calls.",
+            "",
+        ]
     if first:
         lines += [
             "## First run and what I changed",
