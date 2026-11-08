@@ -20,4 +20,4 @@ The technician looks at your ductwork, your gas line and the size of your home. 
 
 ## Book an estimate
 
-Install estimates are a free in-home estimate. Installs need the property owner to request the estimate.
+Every install starts with a free in-home estimate. Installs need the property owner to request the estimate.

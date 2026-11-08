@@ -4,7 +4,7 @@ title: How does the free install estimate work?
 topic: install
 ---
 
-Install estimates are a free in-home estimate. There is no diagnostic fee.
+Every install starts with a free in-home estimate. There is no diagnostic fee.
 
 ## The visit
 

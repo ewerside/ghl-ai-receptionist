@@ -95,7 +95,7 @@
 - id: install_estimate
   topic: install
   text: >-
-    Install estimates are a free in-home estimate. There is no diagnostic fee. The visit takes
+    Every install starts with a free in-home estimate. There is no diagnostic fee. The visit takes
     about 1 hour, and you get a written quote with 3 options.
   values: [free in-home estimate, 1 hour, 3 options]
 

@@ -18,7 +18,7 @@ The price includes the city permit, haul-away of the old equipment and a load ca
 
 ## Getting an exact price
 
-Install estimates are a free in-home estimate. The visit takes about 1 hour, and you get a written quote with 3 options.
+Every install starts with a free in-home estimate. The visit takes about 1 hour, and you get a written quote with 3 options.
 
 ## Paying for it
 

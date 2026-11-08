@@ -16,7 +16,7 @@ If you approve the repair, the $89 fee is waived. You only pay for the repair.
 
 ## When there is no fee
 
-- Install estimates are a free in-home estimate, with no diagnostic fee.
+- The install estimate is a free in-home estimate, with no diagnostic fee.
 - Kestrel Care members pay no diagnostic fee.
 
 ## After-hours visits
