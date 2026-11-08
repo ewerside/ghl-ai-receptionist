@@ -49,17 +49,25 @@ create table if not exists failed_events (
     replayed_at timestamptz
 );
 
--- One row per booked visit. The unique key stops two bookings in the same slot.
+-- One row per visit. The slot is reserved here before the GHL appointment is created, so two
+-- conversations can never book the same time; event_id is filled in once GHL confirms.
 create table if not exists bookings (
-    event_id text primary key,
     calendar_id text not null,
-    contact_id text not null,
-    conversation_id text,
     start_time timestamptz not null,
     end_time timestamptz not null,
+    contact_id text not null,
+    conversation_id text,
+    message_id text,
+    event_id text,
     created_at timestamptz not null default now(),
     unique (calendar_id, start_time)
 );
+
+-- Upgrades for a database created by the first version of this file.
+alter table bookings drop constraint if exists bookings_pkey;
+alter table bookings alter column event_id drop not null;
+alter table bookings add column if not exists message_id text;
+alter table message_log add column if not exists reply_sent_at timestamptz;
 
 -- search_path is pinned so the vector type and the <=> operator resolve the same way for every caller.
 create or replace function match_chunks(query_embedding vector(384), match_count int)

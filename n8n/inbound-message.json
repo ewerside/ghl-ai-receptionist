@@ -100,7 +100,7 @@
       ],
       "parameters": {
         "operation": "executeQuery",
-        "query": "insert into message_log (message_id, conversation_id, contact_id, body, status)\nvalues ($1, $2, $3, $4, 'processing')\non conflict (message_id) do update set status = 'processing', error = null\n  where message_log.status = 'failed'\nreturning message_id",
+        "query": "insert into message_log (message_id, conversation_id, contact_id, body, status)\nvalues ($1, $2, $3, $4, 'processing')\non conflict (message_id) do update set status = 'processing', error = null\n  where message_log.status = 'failed'\n     or (message_log.status = 'processing' and message_log.received_at < now() - interval '10 minutes')\nreturning message_id, reply_sent_at,\n  (select extract(epoch from b.start_time) * 1000 from bookings b where b.message_id = $1 limit 1) as booked_start",
         "options": {
           "queryReplacement": "={{ [$json.message_id, $json.conversation_id, $json.contact_id, $json.body] }}"
         }
@@ -469,7 +469,7 @@
         1200
       ],
       "parameters": {
-        "jsCode": "// Checks Claude's answer, applies the business guards, and plans the GHL actions.\nconst n = $('Normalize').first().json;\nconst ctx = $('Build request').first().json.context;\nconst res = $input.first().json;\nconst AREA = new Set([\"78701\", \"78702\", \"78703\", \"78704\", \"78705\", \"78721\", \"78722\", \"78723\", \"78724\", \"78727\", \"78728\", \"78729\", \"78731\", \"78741\", \"78744\", \"78745\", \"78746\", \"78748\", \"78749\", \"78750\", \"78751\", \"78752\", \"78753\", \"78756\", \"78757\", \"78758\", \"78759\", \"78664\", \"78665\", \"78681\", \"78660\", \"78613\"]);\nconst INTENTS = ['question', 'book_service', 'install_quote', 'emergency', 'out_of_area', 'billing_or_complaint', 'job_seeker', 'spam'];\nconst TIERS = ['hot', 'warm', 'cold'];\nconst ACTIONS = ['answer_only', 'ask_missing_info', 'offer_slots', 'book', 'decline', 'handoff'];\n\nlet turn = null;\nlet problem = null;\nconst block = Array.isArray(res.content) ? res.content.find((c) => c.type === 'tool_use' && c.name === 'record_turn') : null;\nif (!block) {\n  problem = res.error\n    ? 'Claude call failed: ' + String(res.error.message ?? JSON.stringify(res.error)).slice(0, 200)\n    : 'no record_turn call (stop_reason ' + res.stop_reason + ')';\n} else {\n  turn = block.input;\n  const bad = [];\n  if (!Number.isInteger(turn.score) || turn.score < 0 || turn.score > 100) bad.push('score out of range');\n  if (!INTENTS.includes(turn.intent)) bad.push('unknown intent');\n  if (!TIERS.includes(turn.tier)) bad.push('unknown tier');\n  if (!ACTIONS.includes(turn.next_action)) bad.push('unknown next_action');\n  if (typeof turn.reply !== 'string' || !turn.reply.trim()) bad.push('empty reply');\n  const unknown = (turn.articles ?? []).filter((a) => !ctx.article_ids.includes(a));\n  if (unknown.length) bad.push('cites articles not in context: ' + unknown.join(', '));\n  if (bad.length) problem = 'invalid AI output: ' + bad.join('; ');\n}\n\n// Fixed rule when the AI fails or answers out of bounds: score from keywords, a person takes over.\nconst usedFallback = problem !== null;\nif (usedFallback) {\n  const t = n.body.toLowerCase();\n  const urgent = /(no (ac|air|heat|cooling|hot water)|stopped working|not working|leak|flood|sewage|backup|burst|gas)/.test(t);\n  turn = {\n    intent: urgent ? 'emergency' : 'question',\n    service: null,\n    zip: (t.match(/\\b7\\d{4}\\b/) ?? [null])[0],\n    urgency: urgent ? 'emergency' : null,\n    is_homeowner: null,\n    score: urgent ? 80 : 50,\n    tier: urgent ? 'hot' : 'warm',\n    reason: `Fixed rule (${urgent ? 'emergency words found' : 'no emergency words'}), because ${problem}`.slice(0, 300),\n    reply: 'Thanks for your message. A member of our office team will reply within 1 business day.',\n    articles: [],\n    next_action: 'handoff',\n    slot_start: null,\n  };\n}\n\nlet action = turn.next_action;\nlet reply = turn.reply.trim();\nconst guards = [];\nconst zip = turn.zip ?? ctx.known.zip_code ?? null;\nconst slotLabel = (s) => s.label;\n\n// Guard 1: a ZIP outside the service area is always a polite decline, whatever the AI said\n// (except a billing or complaint handoff, which still goes to a person).\nif (!usedFallback && zip && !AREA.has(String(zip)) && action !== 'handoff') {\n  guards.push(`ZIP ${zip} is outside the service area`);\n  const aiDeclined = action === 'decline';\n  action = 'decline';\n  turn.intent = 'out_of_area';\n  turn.tier = 'cold';\n  turn.score = Math.min(turn.score, 20);\n  turn.reason = `ZIP ${zip} is outside the service area (fixed guard; the AI wanted ${turn.next_action}).`;\n  if (!aiDeclined) reply = `Thanks for reaching out. We serve Austin, Round Rock, Pflugerville and Cedar Park, and ${zip} is outside our service area, so we can't book a visit there. We're sorry we can't help this time.`;\n}\n// Guard 2: installs need the property owner.\nif (!usedFallback && turn.intent === 'install_quote' && turn.is_homeowner === false && ['offer_slots', 'book'].includes(action)) {\n  guards.push('install request from a tenant');\n  action = 'answer_only';\n  turn.tier = 'warm';\n  turn.reason = 'Tenant asking for an install; the property owner has to request it (fixed guard).';\n  reply = 'Installs and system replacements need the property owner to request the estimate and sign the quote. Please ask your landlord or property manager to contact us, and we will set up a free in-home estimate.';\n}\n// Guard 3: a booking must name a time that is still open.\nif (action === 'book' && !ctx.slots.some((s) => s.start === turn.slot_start)) {\n  guards.push(`slot ${turn.slot_start} is not in the open times`);\n  action = 'offer_slots';\n  reply = ctx.slots.length >= 2\n    ? `Sorry, that time is no longer open. The next open visits are ${slotLabel(ctx.slots[0])} and ${slotLabel(ctx.slots[1])}. Which one works for you?`\n    : reply;\n}\nif (['offer_slots', 'book'].includes(action) && ctx.slots.length === 0) {\n  guards.push('no open times in the next 8 days');\n  action = 'handoff';\n  reply = 'Thanks! Our calendar is full for the next few days, so a member of our office team will reply within 1 business day to find a time.';\n}\n\nconst tagFor = { out_of_area: 'out-of-area', spam: 'spam', job_seeker: 'job-seeker' };\nconst fields = { ai_score: turn.score, ai_tier: turn.tier, ai_intent: turn.intent, ai_reason: turn.reason, service_type: turn.service, zip_code: zip, urgency: turn.urgency };\nconst customFields = Object.entries(fields)\n  .filter(([, v]) => v !== null && v !== undefined && v !== '')\n  .map(([k, v]) => ({ id: n.cfg.fields[k], field_value: v }));\nconst usage = res.usage ?? {};\nreturn [{\n  json: {\n    turn, action, reply, used_fallback: usedFallback, problem, guards,\n    decline_tag: tagFor[turn.intent] ?? 'out-of-area',\n    contact_update: { customFields },\n    slot_start: turn.slot_start,\n    input_tokens: usage.input_tokens ?? 0,\n    output_tokens: usage.output_tokens ?? 0,\n  },\n}];\n"
+        "jsCode": "// Checks Claude's answer, applies the business guards, and plans the GHL actions.\nconst n = $('Normalize').first().json;\nconst ctx = $('Build request').first().json.context;\nconst res = $input.first().json;\nconst AREA = new Set([\"78701\", \"78702\", \"78703\", \"78704\", \"78705\", \"78721\", \"78722\", \"78723\", \"78724\", \"78727\", \"78728\", \"78729\", \"78731\", \"78741\", \"78744\", \"78745\", \"78746\", \"78748\", \"78749\", \"78750\", \"78751\", \"78752\", \"78753\", \"78756\", \"78757\", \"78758\", \"78759\", \"78664\", \"78665\", \"78681\", \"78660\", \"78613\"]);\nconst INTENTS = ['question', 'book_service', 'install_quote', 'emergency', 'out_of_area', 'billing_or_complaint', 'job_seeker', 'spam'];\nconst TIERS = ['hot', 'warm', 'cold'];\nconst ACTIONS = ['answer_only', 'ask_missing_info', 'offer_slots', 'book', 'decline', 'handoff'];\n\nlet turn = null;\nlet problem = null;\nconst block = Array.isArray(res.content) ? res.content.find((c) => c.type === 'tool_use' && c.name === 'record_turn') : null;\nif (!block) {\n  problem = res.error\n    ? 'Claude call failed: ' + String(res.error.message ?? JSON.stringify(res.error)).slice(0, 200)\n    : 'no record_turn call (stop_reason ' + res.stop_reason + ')';\n} else {\n  turn = block.input;\n  const bad = [];\n  if (!Number.isInteger(turn.score) || turn.score < 0 || turn.score > 100) bad.push('score out of range');\n  if (!INTENTS.includes(turn.intent)) bad.push('unknown intent');\n  if (!TIERS.includes(turn.tier)) bad.push('unknown tier');\n  if (!ACTIONS.includes(turn.next_action)) bad.push('unknown next_action');\n  if (typeof turn.reply !== 'string' || !turn.reply.trim()) bad.push('empty reply');\n  const unknown = (turn.articles ?? []).filter((a) => !ctx.article_ids.includes(a));\n  if (unknown.length) bad.push('cites articles not in context: ' + unknown.join(', '));\n  if (bad.length) problem = 'invalid AI output: ' + bad.join('; ');\n}\n\n// Fixed rule when the AI fails or answers out of bounds: score from keywords, a person takes over.\nconst usedFallback = problem !== null;\nif (usedFallback) {\n  const t = n.body.toLowerCase();\n  const urgent = /(no (ac|air|heat|cooling|hot water)|stopped working|not working|leak|flood|sewage|backup|burst|gas)/.test(t);\n  turn = {\n    intent: urgent ? 'emergency' : 'question',\n    service: null,\n    zip: (t.match(/\\b7\\d{4}\\b/) ?? [null])[0],\n    urgency: urgent ? 'emergency' : null,\n    is_homeowner: null,\n    score: urgent ? 80 : 50,\n    tier: urgent ? 'hot' : 'warm',\n    reason: `Fixed rule (${urgent ? 'emergency words found' : 'no emergency words'}), because ${problem}`.slice(0, 300),\n    reply: 'Thanks for your message. A member of our office team will reply within 1 business day.',\n    articles: [],\n    next_action: 'handoff',\n    slot_start: null,\n  };\n}\n\nlet action = turn.next_action;\nlet reply = turn.reply.trim();\nconst guards = [];\nconst zip = turn.zip ?? ctx.known.zip_code ?? null;\nconst slotLabel = (s) => s.label;\n\n// Guard 1: a ZIP outside the service area is always a polite decline, whatever the AI said\n// (except a billing or complaint handoff, which still goes to a person).\nif (!usedFallback && zip && !AREA.has(String(zip)) && action !== 'handoff') {\n  guards.push(`ZIP ${zip} is outside the service area`);\n  const aiDeclined = action === 'decline';\n  action = 'decline';\n  turn.intent = 'out_of_area';\n  turn.tier = 'cold';\n  turn.score = Math.min(turn.score, 20);\n  turn.reason = `ZIP ${zip} is outside the service area (fixed guard; the AI wanted ${turn.next_action}).`;\n  if (!aiDeclined) reply = `Thanks for reaching out. We serve Austin, Round Rock, Pflugerville and Cedar Park, and ${zip} is outside our service area, so we can't book a visit there. We're sorry we can't help this time.`;\n}\n// Guard 0: no times before we know the ZIP code is in the service area.\nif (!usedFallback && !zip && ['offer_slots', 'book'].includes(action)) {\n  guards.push('no ZIP code yet');\n  action = 'ask_missing_info';\n  reply = 'Happy to help. What ZIP code is the home in? Then I can check our service area and find you a time.';\n}\n// Guard 2: installs need the property owner.\nif (!usedFallback && turn.intent === 'install_quote' && turn.is_homeowner === false && ['offer_slots', 'book'].includes(action)) {\n  guards.push('install request from a tenant');\n  action = 'answer_only';\n  turn.tier = 'warm';\n  turn.reason = 'Tenant asking for an install; the property owner has to request it (fixed guard).';\n  reply = 'Installs and system replacements need the property owner to request the estimate and sign the quote. Please ask your landlord or property manager to contact us, and we will set up a free in-home estimate.';\n}\n// Guard 3: a booking must name a time that is still open (or one this message already holds,\n// when the run is a replay).\nconst own = $('Claim message').first().json.booked_start;\nconst ownSlot = own && turn.slot_start && new Date(turn.slot_start).getTime() === Number(own);\nif (action === 'book' && !ownSlot && !ctx.slots.some((s) => s.start === turn.slot_start)) {\n  guards.push(`slot ${turn.slot_start} is not in the open times`);\n  action = 'offer_slots';\n  if (ctx.slots.length >= 2) {\n    reply = `Sorry, that time is no longer open. The next open visits are ${slotLabel(ctx.slots[0])} and ${slotLabel(ctx.slots[1])}. Which one works for you?`;\n  } else if (ctx.slots.length === 1) {\n    reply = `Sorry, that time is no longer open. The next open visit is ${slotLabel(ctx.slots[0])}. Does that work for you?`;\n  }\n}\nif (['offer_slots', 'book'].includes(action) && ctx.slots.length === 0) {\n  guards.push('no open times in the next 8 days');\n  action = 'handoff';\n  reply = 'Thanks! Our calendar is full for the next few days, so a member of our office team will reply within 1 business day to find a time.';\n}\n\nconst tagFor = { out_of_area: 'out-of-area', spam: 'spam', job_seeker: 'job-seeker' };\nconst fields = { ai_score: turn.score, ai_tier: turn.tier, ai_intent: turn.intent, ai_reason: turn.reason, service_type: turn.service, zip_code: zip, urgency: turn.urgency };\nconst customFields = Object.entries(fields)\n  .filter(([, v]) => v !== null && v !== undefined && v !== '')\n  .map(([k, v]) => ({ id: n.cfg.fields[k], field_value: v }));\nconst usage = res.usage ?? {};\nreturn [{\n  json: {\n    turn, action, reply, used_fallback: usedFallback, problem, guards,\n    decline_tag: tagFor[turn.intent] ?? 'out-of-area',\n    contact_update: { customFields },\n    slot_start: turn.slot_start,\n    input_tokens: usage.input_tokens ?? 0,\n    output_tokens: usage.output_tokens ?? 0,\n  },\n}];\n"
       }
     },
     {
@@ -533,7 +533,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        880,
+        1320,
         800
       ],
       "parameters": {
@@ -587,7 +587,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1100,
+        1540,
         800
       ],
       "parameters": {
@@ -600,7 +600,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1320,
+        1760,
         800
       ],
       "parameters": {
@@ -634,7 +634,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1540,
+        1980,
         700
       ],
       "parameters": {
@@ -664,7 +664,7 @@
           "name": "receptionist GHL"
         }
       },
-      "retryOnFail": true,
+      "retryOnFail": false,
       "maxTries": 4,
       "waitBetweenTries": 3000,
       "onError": "continueErrorOutput"
@@ -675,14 +675,14 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1760,
+        2200,
         600
       ],
       "parameters": {
         "operation": "executeQuery",
-        "query": "insert into bookings (event_id, calendar_id, contact_id, conversation_id, start_time, end_time)\nvalues ($1, $2, $3, $4, $5::timestamptz, $5::timestamptz + interval '2 hours')\non conflict do nothing",
+        "query": "update bookings set event_id = $1 where message_id = $2",
         "options": {
-          "queryReplacement": "={{ [$json.id, $('Normalize').first().json.cfg.calendar_id, $('Normalize').first().json.contact_id, $('Normalize').first().json.conversation_id, $('Decide').first().json.slot_start] }}"
+          "queryReplacement": "={{ [$json.id, $('Normalize').first().json.message_id] }}"
         }
       },
       "credentials": {
@@ -706,7 +706,7 @@
         600
       ],
       "parameters": {
-        "jsCode": "const d = $('Decide').first().json;\nconst event = $('Create appointment').first().json;\nreturn [{ json: { outcome: 'booked', reply: d.reply, event_id: event.id ?? null, note: `Booked a visit for ${d.slot_start}.` } }];\n"
+        "jsCode": "const d = $('Decide').first().json;\nlet eventId = $('Reserve slot').first().json.existing_event;\ntry {\n  eventId = eventId ?? $('Create appointment').first().json.id ?? null;\n} catch (e) {\n  // A replay of a message that was already booked skips Create appointment.\n}\nreturn [{ json: { outcome: 'booked', reply: d.reply, event_id: eventId, note: `Booked a visit for ${d.slot_start}.` } }];\n"
       }
     },
     {
@@ -1054,8 +1054,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3080,
-        1200
+        3300,
+        1300
       ],
       "parameters": {
         "method": "POST",
@@ -1094,7 +1094,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3300,
+        3740,
         1200
       ],
       "parameters": {
@@ -1107,7 +1107,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3520,
+        3960,
         1200
       ],
       "parameters": {
@@ -1133,7 +1133,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        3740,
+        4180,
         1200
       ],
       "parameters": {
@@ -1141,6 +1141,149 @@
         "responseBody": "={{ JSON.stringify($('Log values').first().json.response) }}",
         "options": {}
       }
+    },
+    {
+      "id": "a80b2f54-39f7-5af6-a321-c707fa4bf289",
+      "name": "Reserve slot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        880,
+        650
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with mine as (select event_id from bookings where message_id = $1 limit 1),\nins as (\n  insert into bookings (calendar_id, contact_id, conversation_id, message_id, start_time, end_time)\n  select $2, $3, $4, $1, $5::timestamptz, $5::timestamptz + interval '2 hours'\n  where not exists (select 1 from mine)\n  on conflict (calendar_id, start_time) do nothing\n  returning 1\n)\nselect (select event_id from mine) as existing_event,\n  exists (select 1 from mine) or exists (select 1 from ins) as reserved",
+        "options": {
+          "queryReplacement": "={{ [$('Normalize').first().json.message_id, $('Normalize').first().json.cfg.calendar_id, $('Normalize').first().json.contact_id, $('Normalize').first().json.conversation_id, $('Decide').first().json.slot_start] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "{{CRED_SUPABASE}}",
+          "name": "receptionist Supabase"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "d9a05262-0a1c-51ae-bbcd-fa73c71c8e48",
+      "name": "Reservation",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1100,
+        650
+      ],
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ $json.existing_event ? 0 : ($json.reserved ? 1 : 2) }}"
+      }
+    },
+    {
+      "id": "57125d35-a508-5191-add3-1035cfaf17b5",
+      "name": "Release slot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1980,
+        920
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "delete from bookings where message_id = $1 and event_id is null",
+        "options": {
+          "queryReplacement": "={{ [$('Normalize').first().json.message_id] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "{{CRED_SUPABASE}}",
+          "name": "receptionist Supabase"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "55c92670-2502-5647-b4b7-a7d66f2bbeeb",
+      "name": "Booking error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        860
+      ],
+      "parameters": {
+        "jsCode": "// Only a real conflict means the time was taken. Any other GHL error fails the run,\n// so the error workflow queues it for a replay.\nconst err = JSON.stringify($input.first().json.error ?? $input.first().json).toLowerCase();\nif (!/slot|availab|already|booked|conflict/.test(err)) {\n  throw new Error('GHL appointment failed: ' + err.slice(0, 300));\n}\nreturn [{ json: {} }];\n"
+      }
+    },
+    {
+      "id": "8410a2e5-54cc-5b4f-ba80-b009150eccbc",
+      "name": "Already replied?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3080,
+        1200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a4fd47d6-0153-512e-af59-613ec7476eb0",
+              "leftValue": "={{ Boolean($('Claim message').first().json.reply_sent_at) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cd4800c5-4760-5cd4-9978-00d051c9a03e",
+      "name": "Mark replied",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3520,
+        1300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update message_log set reply_sent_at = now() where message_id = $1",
+        "options": {
+          "queryReplacement": "={{ [$('Normalize').first().json.message_id] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "{{CRED_SUPABASE}}",
+          "name": "receptionist Supabase"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -1327,7 +1470,7 @@
       "main": [
         [
           {
-            "node": "Recheck slot",
+            "node": "Reserve slot",
             "type": "main",
             "index": 0
           }
@@ -1388,7 +1531,7 @@
         ],
         [
           {
-            "node": "Outcome slot taken",
+            "node": "Release slot",
             "type": "main",
             "index": 0
           }
@@ -1406,7 +1549,7 @@
         ],
         [
           {
-            "node": "Outcome slot taken",
+            "node": "Booking error",
             "type": "main",
             "index": 0
           }
@@ -1567,7 +1710,7 @@
       "main": [
         [
           {
-            "node": "Send reply",
+            "node": "Already replied?",
             "type": "main",
             "index": 0
           }
@@ -1578,7 +1721,7 @@
       "main": [
         [
           {
-            "node": "Log values",
+            "node": "Mark replied",
             "type": "main",
             "index": 0
           }
@@ -1601,6 +1744,93 @@
         [
           {
             "node": "Respond done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reserve slot": {
+      "main": [
+        [
+          {
+            "node": "Reservation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reservation": {
+      "main": [
+        [
+          {
+            "node": "Outcome booked",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Recheck slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Outcome slot taken",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Booking error": {
+      "main": [
+        [
+          {
+            "node": "Release slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Release slot": {
+      "main": [
+        [
+          {
+            "node": "Outcome slot taken",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already replied?": {
+      "main": [
+        [
+          {
+            "node": "Log values",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark replied": {
+      "main": [
+        [
+          {
+            "node": "Log values",
             "type": "main",
             "index": 0
           }
