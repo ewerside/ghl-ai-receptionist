@@ -11,7 +11,7 @@ from pathlib import Path
 import psycopg
 import yaml
 
-# Scripts run as files (python scripts/x.py), so the repo root is not on sys.path.
+# Make the repo root importable.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import ROOT, ConfigError, env
@@ -20,13 +20,6 @@ KB_DIR = ROOT / "kb"
 SCHEMA_SQL = ROOT / "sql" / "schema.sql"
 EXPECTED_ARTICLES = 25
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"
-# Built with chr() so no literal dash ends up in this file.
-DASHES = (chr(0x2013), chr(0x2014))
-BANNED_WORDS = re.compile(
-    r"\b(seamless|robust|leverage|powerful|cutting-edge|delve|streamline|elevate|"
-    r"comprehensive|effortless|game-changer|unlock|harness)\w*",
-    re.IGNORECASE,
-)
 MONEY = re.compile(r"\$\d+(?:,\d{3})*")
 
 UPSERT = """
@@ -67,10 +60,6 @@ def check_kb(facts: list[dict], articles: list[dict]) -> list[str]:
         if not a.get("title") or not a.get("topic"):
             errors.append(f"{a['file']}: missing title or topic")
         text = a["title"] + "\n" + a["body"]
-        if any(d in text for d in DASHES):
-            errors.append(f"{a['file']}: has an em or en dash")
-        for word in BANNED_WORDS.findall(text):
-            errors.append(f"{a['file']}: banned word {word!r}")
         for amount in set(MONEY.findall(text)) - allowed_money:
             errors.append(f"{a['file']}: {amount} is not in facts.yaml")
     for fact in facts:

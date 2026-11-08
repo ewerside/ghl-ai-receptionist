@@ -47,6 +47,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 10_000:
+                raise ValueError("body must be 1 to 10000 bytes")
             text = json.loads(self.rfile.read(length))["text"]
             if not isinstance(text, str) or not text.strip():
                 raise ValueError("text must be a non-empty string")

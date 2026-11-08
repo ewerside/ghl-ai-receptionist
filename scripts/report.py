@@ -11,7 +11,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-# Scripts run as files (python scripts/x.py), so the repo root is not on sys.path.
+# Make the repo root importable.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import ROOT
@@ -19,7 +19,7 @@ from config import ROOT
 RUNS = ROOT / "data" / "runs"
 FIRST_RUN = ROOT / "data" / "runs-1"
 CHANGES = [
-    "The help center now states that any question the chat cannot answer, and any request for a person, goes to the office team, who reply within 1 business day. The prompt already promised this, but only billing questions had it in the help center.",
+    "The FAQ now states that any question the chat cannot answer, and any request for a person, goes to the office team, who reply within 1 business day. The prompt already promised this, but only billing questions had it in the FAQ.",
     'The maintenance plan article title says "maintenance plan", so a question with those words finds it.',
     "The ZIP guard now turns every out-of-area conversation into a decline with intent out_of_area, not only the ones where the AI tried to offer times.",
     "The prompt says not to add rules, limits or advice the articles do not state.",
@@ -50,6 +50,8 @@ def score(model: str, expected: dict[str, dict], runs: Path = RUNS) -> dict:
     convs = {c["id"]: c for c in load_jsonl(runs / f"{model}.jsonl")}
     judged = load_jsonl(runs / f"{model}-judge.jsonl")
     events = json.loads((runs / f"{model}-calendar.json").read_text(encoding="utf-8"))
+    # A run made with --only covers some conversations; score just those.
+    expected = {k: v for k, v in expected.items() if k in convs}
     m = Counter()
     errors = []
     for cid, exp in expected.items():
@@ -124,6 +126,17 @@ def pct(a: int, b: int) -> str:
     return f"{a} of {b} ({100 * a / b:.0f}%)" if b else "n/a"
 
 
+def why(r: dict, check: str) -> str:
+    m = r["m"]
+    return {
+        "booking right in 45 of 50 or more": f"booked right in {m['booking']} of {r['n']}, and the bar is 45",
+        "0 duplicate slots": f"had {r['duplicate_slots']} duplicate slots",
+        "0 out-of-area bookings": f"booked {m['out_of_area_booked']} visits outside the area",
+        "handoff recall 90% or more": "missed more than 10% of the handoffs",
+        "at most 1 invented claim in 50 conversations": f"had {r['flagged_convs']} conversations with an invented claim, and the limit is 1",
+    }[check]
+
+
 def passes(r: dict) -> dict[str, bool]:
     m = r["m"]
     tp, fn = m["handoff_tp"], m["handoff_fn"]
@@ -149,6 +162,8 @@ def render(results: list[dict], first: list[dict]) -> str:
         "# Evaluation report",
         "",
         "I ran the 50 synthetic conversations in `data/conversations.jsonl` through the live flow (GHL sandbox, n8n, Claude), once per model, with the demo data reset before each run. The answer key is `data/expected.csv`. Every number below comes from `scripts/report.py` over the files in `data/runs/`.",
+        "",
+        "After these runs, a code review led me to add the slot reservation in Postgres, the record that a reply was sent, and the guard that asks for the ZIP code before offering times. I did not rerun the 50 conversations after those changes. I reran the 5-conversation smoke test (5 of 5 right) and the 4 reliability tests below.",
         "",
         "## Results",
         "",
@@ -228,8 +243,7 @@ def render(results: list[dict], first: list[dict]) -> str:
                 lines += [
                     (
                         f"{r['model']} costs ${r['cost_per_conv']:.4f} per conversation and is faster "
-                        f"({r['median_flow_ms'] / 1000:.1f} s per reply), but it failed: {', '.join(failed)}. "
-                        "A wrong fact sent to a customer costs more than the difference, so I keep the rule."
+                        f"({r['median_flow_ms'] / 1000:.1f} s per reply), but it {'; '.join(why(r, name) for name in failed)}."
                     ),
                     "",
                 ]
@@ -239,10 +253,10 @@ def render(results: list[dict], first: list[dict]) -> str:
         lines.append("")
         lines += [f"- {e}" for e in r["errors"]] or ["- none"]
         if r["flagged"]:
-            lines += ["", "Replies the judge flagged:", ""]
+            lines += ["", "What the judge flagged (its words, not the reply):", ""]
             for j in r["flagged"]:
                 lines.append(
-                    f"- {j['id']} turn {j['turn']}: {'; '.join(j['unsupported_claims'])}"
+                    f"- {j['id']} turn {j['turn'] + 1}: {'; '.join(j['unsupported_claims'])}"
                 )
         lines.append("")
     checked = human_check()
@@ -254,7 +268,7 @@ def render(results: list[dict], first: list[dict]) -> str:
         lines += [
             "## Hand check of the judge",
             "",
-            f"I read {len(checked)} replies picked at random (seed 42) against the help center. My verdict matched the judge on {agree} of {len(checked)}.",
+            f"I read {len(checked)} replies picked at random (seed 42) against the FAQ. My verdict matched the judge on {agree} of {len(checked)}.",
             "",
             "| Reply | Judge | Me | Note |",
             "|---|---|---|---|",
@@ -262,7 +276,7 @@ def render(results: list[dict], first: list[dict]) -> str:
         for row in checked:
             judge = "flagged" if int(row["judge_flags"]) else "ok"
             lines.append(
-                f"| {row['id']} turn {row['turn']} | {judge} | {row['my_verdict']} | {row['note']} |"
+                f"| {row['id']} turn {int(row['turn']) + 1} | {judge} | {row['my_verdict']} | {row['note']} |"
             )
         lines.append("")
     reliability = ROOT / "data" / "reliability.json"
@@ -285,7 +299,7 @@ def render(results: list[dict], first: list[dict]) -> str:
             )
         lines += [
             "",
-            "In the taken-time test, the taken time had already left the open times list when the customer answered, so the guard in `Decide` caught it. The second check right before booking (`Recheck slot`) covers the case where the time is taken in the seconds between those two calls.",
+            "In the taken-time test, the time had already dropped off the open list, so the guard in `Decide` caught it. The Postgres reservation and `Recheck slot` cover the seconds between those two steps.",
             "",
         ]
     if first:
@@ -317,8 +331,7 @@ def render(results: list[dict], first: list[dict]) -> str:
         "- Booking right: the conversation reached a booked visit if and only if the answer key says it should.",
         "- Intent and tier: the values the agent recorded on the last turn of the conversation.",
         "- Handoff: any turn that sent the conversation to a person. Recall is over the 6 conversations that should go to a person.",
-        "- Invented claims: Claude Sonnet 5.5 reads every reply next to all 25 help center articles and lists business facts the articles do not support. Visit times from the calendar do not count. The judge is the same model as one of the two candidates, so I also checked 10 replies by hand (above).",
-        '- The demo calendar only has Monday to Saturday, 8 am to 6 pm. When the first day fills up, an emergency gets the first open time, which can be later than the "today or tomorrow" the help center promises. A real shop would add an on-call calendar for after-hours visits.',
+        "- Invented claims: Claude Sonnet 5.5 reads every reply next to all 25 FAQ articles and lists business facts the articles do not support. Visit times from the calendar do not count. The judge is the same model as one of the two candidates, so I also checked 10 replies by hand (above).",
         "- Cost: the token counts from each Claude call at list prices. GHL, n8n and the embedding service add no per-call cost.",
         "- Time in the flow: from the webhook call to the logged turn, measured inside n8n. End to end also counts storing the message in GHL and the network.",
     ]

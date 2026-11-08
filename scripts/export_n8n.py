@@ -7,10 +7,11 @@ would end up in the JSON.
 import json
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 
-# Scripts run as files (python scripts/x.py), so the repo root is not on sys.path.
+# Make the repo root importable.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from deploy_n8n import checked, find_workflow, marker_values
@@ -42,7 +43,18 @@ def replacements(values: dict[str, str]) -> list[tuple[str, str]]:
 
 
 def secrets_in(text: str) -> list[str]:
-    patterns = ["pit-", "sk-ant", "eyJ", env("INBOUND_TOKEN"), env("GHL_LOCATION_ID")]
+    db_password = urlsplit(env("DATABASE_URL")).password or "no-password"
+    patterns = [
+        "pit-",
+        "sk-ant",
+        "eyJ",
+        env("GHL_TOKEN"),
+        env("ANTHROPIC_API_KEY"),
+        env("N8N_API_KEY"),
+        env("INBOUND_TOKEN"),
+        db_password,
+        env("GHL_LOCATION_ID"),
+    ]
     return [p if len(p) < 12 else p[:4] + "..." for p in patterns if p in text]
 
 

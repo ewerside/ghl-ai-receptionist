@@ -8,6 +8,7 @@ Writes data/runs/<model>.jsonl (one line per conversation), <model>-calendar.jso
 <model>-judge.jsonl. scripts/report.py turns them into docs/report.md.
 """
 
+import csv
 import json
 import random
 import sys
@@ -17,9 +18,8 @@ from pathlib import Path
 import anthropic
 import httpx
 import psycopg
-import yaml
 
-# Scripts run as files (python scripts/x.py), so the repo root is not on sys.path.
+# Make the repo root importable.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import chat
@@ -197,8 +197,6 @@ def human_sample(model: str, k: int = 10) -> None:
     if path.exists():
         print(f"  {path.relative_to(ROOT)} exists, not overwritten")
         return
-    import csv
-
     with path.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(
@@ -232,14 +230,14 @@ def main(args: list[str]) -> int:
             run(model, only)
             judge(model)
         if not only:
-            human_sample(MODELS[0])
+            human_sample(models[0])
     except (
         ConfigError,
         ghl.GHLError,
         httpx.HTTPError,
         psycopg.Error,
         anthropic.APIError,
-        yaml.YAMLError,
+        FileNotFoundError,
     ) as exc:
         print(f"run_eval FAILED: {exc}")
         return 1

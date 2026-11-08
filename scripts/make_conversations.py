@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-# Scripts run as files (python scripts/x.py), so the repo root is not on sys.path.
+# Make the repo root importable.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import ROOT

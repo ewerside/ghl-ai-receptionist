@@ -13,7 +13,7 @@ from pathlib import Path
 import httpx
 import psycopg
 
-# Scripts run as files (python scripts/x.py), so the repo root is not on sys.path.
+# Make the repo root importable.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import ConfigError, env, n8n_base_url
@@ -30,6 +30,15 @@ def main(args: list[str]) -> int:
                 "select id, step, payload from failed_events "
                 "where replayed_at is null and payload ? 'message_id' order by id"
             ).fetchall()
+            # Without the original payload there is nothing to resend; list them for a person.
+            orphans = conn.execute(
+                "select id, step, error from failed_events "
+                "where replayed_at is null and not payload ? 'message_id' order by id"
+            ).fetchall()
+            for event_id, step, error in orphans:
+                print(
+                    f"  #{event_id} at {step} has no payload, check it by hand: {error[:120]}"
+                )
             print(f"{len(rows)} failed events to replay")
             for event_id, step, payload in rows:
                 print(
@@ -41,8 +50,10 @@ def main(args: list[str]) -> int:
                     continue
                 resp = httpx.post(url, json=payload, headers=headers, timeout=120)
                 # A failed run answers 200 with an empty body, so check before parsing.
-                ok = resp.status_code == 200 and resp.content
-                answer = resp.json() if ok else {}
+                try:
+                    answer = resp.json() if resp.content else {}
+                except ValueError:
+                    answer = {}
                 # "duplicate" means an earlier replay already finished this message.
                 if answer.get("status") in ("done", "duplicate"):
                     conn.execute(

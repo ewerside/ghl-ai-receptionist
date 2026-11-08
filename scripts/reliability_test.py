@@ -18,7 +18,7 @@ from pathlib import Path
 import httpx
 import psycopg
 
-# Scripts run as files (python scripts/x.py), so the repo root is not on sys.path.
+# Make the repo root importable.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import chat
@@ -62,8 +62,8 @@ def restore_credentials() -> None:
 
 
 def outbound_count(conversation_id: str, since: float) -> int:
-    """Chat replies sent to the customer since the test started (GHL also logs activity
-    entries like "Opportunity created" as outbound messages, so those are skipped)."""
+    """Replies sent to the customer since the test started. Skips GHL activity entries
+    such as "Opportunity created"."""
     msgs = ghl.request(
         "GET", f"/conversations/{conversation_id}/messages", params={"limit": 50}
     )
