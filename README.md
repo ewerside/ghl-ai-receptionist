@@ -42,9 +42,10 @@ flowchart LR
 - The flow reads the contact, the last 10 messages, the open visit times and the 4 FAQ chunks closest to the message. A small container next to n8n embeds the question with fastembed (`bge-small-en-v1.5`), and pgvector finds the chunks.
 - Claude fills one tool call, `record_turn`: intent, service, ZIP code, urgency, homeowner or not, a score from 0 to 100, a tier, a one-sentence reason, the reply and the next action. The reply may only use facts from the FAQ chunks and names the article it used.
 - A Code node checks the answer. A score out of range, an unknown intent, or a cited article that wasn't in the context means the AI answer is dropped: a fixed rule scores the lead from keywords and a person takes over.
-- Three guards run in code, whatever the AI said: a ZIP code outside the service area always gets a polite decline and is never booked, a tenant never books an install, and a booking must name a time that is still open.
+- Four guards run in code, whatever the AI said: no times are offered before the ZIP code is known, a ZIP code outside the service area always gets a polite decline, a tenant never books an install, and a booking must name a time that is still open.
 - Then the GHL actions: custom fields on the contact (score, tier, intent, reason, service, ZIP, urgency), a booking (the time is checked again right before), a tag and the Lost stage for a decline, or a task and the Needs Human stage for a handoff. The opportunity moves to New Lead, Qualified, Booked, Needs Human or Lost, and gets a note with the score and the reason.
-- The reply goes out last. If any GHL call before it fails, the error workflow saves the original payload to `failed_events`, and `scripts/replay_failed.py` runs it again without a double reply.
+- Before a booking, the slot is reserved in Postgres (one row per calendar and start time), so two conversations can't take the same time even if they confirm in the same second.
+- The reply goes out last, and the flow records that it was sent. If any GHL call fails, the error workflow saves the original payload to `failed_events`, and `scripts/replay_failed.py` runs it again. A replay never sends a second reply or books a second visit for the same message.
 
 ![The n8n workflow](docs/n8n-workflow.png)
 
@@ -155,7 +156,7 @@ A Snapshot of the sub-account (pipeline, calendar, custom fields and tags) exist
 - Strict tool schemas reject an `enum` that lists `null`; the optional `urgency` field uses `anyOf` with a null type.
 - In n8n 2.26 the error workflow only runs when it is active, so the deploy script activates both workflows.
 - The test scripts play the customer: they store each message in GHL through the API and then call the n8n webhook with the same ids that a GHL workflow webhook would send.
-- The n8n retry is a fixed wait (3 s, 4 tries) on every GHL call, not an exponential backoff. With the sandbox limit of 25 requests per 10 s that is enough for one conversation at a time.
+- The n8n retry is a fixed wait (3 or 4 tries, 1 to 3 s apart), not an exponential backoff. With the sandbox limit of 25 requests per 10 s that is enough for one conversation at a time. Creating an appointment is not retried, so a timeout can't book twice.
 - GHL's opportunity search lags a few seconds behind updates. Inside a conversation the turns are far enough apart, and no contact ended with two opportunities, but the eval reads the final stage 30 s after the last conversation.
 - The demo calendar only has Monday to Saturday, 8 am to 6 pm. When the first day fills up, an emergency gets the first open time, which can be later than the "today or tomorrow" the FAQ promises. A real shop would add an on-call calendar.
 - The docs list `Version: v3` for the message routes. `2021-07-28` also works, so I use one version for every call.

@@ -18,7 +18,7 @@
   {
     "test": "Offered time taken before the customer confirms",
     "expected": "no booking on the taken time, the agent offers the next open time",
-    "result": "first turn offer_slots; after the time was taken: offer_slots, events at 08:00: 1, events for this customer: 0. Reply: Sorry for the confusion, the Thu, Nov 12 8:00 AM slot I mentioned is no longer open, so I can't book it. Visits are booked as 2-hour arrival windows (from our \"How do I book a visit?\" page). Our first openings now are Thu, Nov 12, 10:00 AM to 12:00 PM, or Thu, Nov 12, 12:00 PM to 2:00 PM. Which would you like?",
+    "result": "first turn offer_slots; after the time was taken: offer_slots, events at 12:00: 1, events for this customer: 0. Reply: Sorry, the Mon, Nov 9 12:00 PM to 2:00 PM window is no longer open. The first times I have now are Mon, Nov 9 from 2:00 PM to 4:00 PM, or Mon, Nov 9 from 4:00 PM to 6:00 PM. Which one would you like me to book?",
     "lost": 0,
     "duplicate_replies": 0,
     "pass": true

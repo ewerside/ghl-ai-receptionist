@@ -2,6 +2,8 @@
 
 I ran the 50 synthetic conversations in `data/conversations.jsonl` through the live flow (GHL sandbox, n8n, Claude), once per model, with the demo data reset before each run. The answer key is `data/expected.csv`. Every number below comes from `scripts/report.py` over the files in `data/runs/`.
 
+After these runs, a code review led me to add the slot reservation in Postgres, the record that a reply was sent, and the guard that asks for the ZIP code before offering times. I did not rerun the 50 conversations after those changes. I reran the 5-conversation smoke test (5 of 5 right) and the 4 reliability tests below.
+
 ## Results
 
 | Metric | claude-haiku-5-5 | claude-sonnet-5-5 |
@@ -40,7 +42,7 @@ claude-sonnet-5-5: 5 of 5 checks pass.
 
 Rule: the cheapest model that passes every acceptance check. That is **claude-sonnet-5-5** at $0.0206 per conversation.
 
-claude-haiku-5-5 costs $0.0010 per conversation and is faster (5.7 s per reply), but it failed: at most 1 invented claim in 50 conversations. A wrong fact sent to a customer costs more than the difference, so I keep the rule.
+claude-haiku-5-5 costs $0.0010 per conversation and is faster (5.7 s per reply), but it had 2 conversations with an invented claim, and the limit is 1.
 
 ## Errors
 
@@ -48,35 +50,35 @@ claude-haiku-5-5 costs $0.0010 per conversation and is faster (5.7 s per reply),
 
 - c19 (repair): intent question, expected book_service; stage New Lead, expected Qualified
 
-Replies the judge flagged:
+What the judge flagged (its words, not the reply):
 
-- c32 turn 0: The office team will need the date of last week's repair and the charges the customer sees.
-- c29 turn 1: Customers can call the company right away about a sewer backup or multiple drains backing up. The help center gives no phone line, and it says visits are not booked outside the service area.
+- c32 turn 1: The office team will need the date of last week's repair and the charges the customer sees.
+- c29 turn 2: Customers can call the company right away about a sewer backup or multiple drains backing up. The help center gives no phone line, and it says visits are not booked outside the service area.
 
 ### claude-sonnet-5-5
 
 - c07 (emergency): intent book_service, expected emergency; tier warm, expected hot
 
-Replies the judge flagged:
+What the judge flagged (its words, not the reply):
 
-- c40 turn 0: Our careers page doesn't list apprentice roles specifically (the help center doesn't mention a careers page or say anything about apprentice roles).
+- c40 turn 1: Our careers page doesn't list apprentice roles specifically (the help center doesn't mention a careers page or say anything about apprentice roles).
 
 ## Hand check of the judge
 
-I read 10 replies picked at random (seed 42) against the help center. My verdict matched the judge on 10 of 10.
+I read 10 replies picked at random (seed 42) against the FAQ. My verdict matched the judge on 10 of 10.
 
 | Reply | Judge | Me | Note |
 |---|---|---|---|
-| c44 turn 0 | ok | ok | fee and waiver match the diagnostic fee article |
-| c14 turn 1 | ok | ok | ZIP check and fee are right |
-| c11 turn 1 | ok | ok | 1 hour, 3 options and the 24 hour change rule are right |
-| c17 turn 0 | ok | ok | repair range and warranty are right |
-| c09 turn 1 | ok | ok | no business facts beyond the free estimate |
-| c13 turn 0 | ok | ok | furnace price and financing threshold are right |
-| c49 turn 0 | ok | ok | plan price and benefits are right |
-| c45 turn 0 | ok | ok | warranty text is right |
-| c10 turn 0 | ok | ok | prices and what is included are right |
-| c02 turn 1 | ok | ok | no invented fact, but it repeats the today or tomorrow rule while offering Tuesday (Monday was full); it also cites the booking page by a shortened title |
+| c44 turn 1 | ok | ok | fee and waiver match the diagnostic fee article |
+| c14 turn 2 | ok | ok | ZIP check and fee are right |
+| c11 turn 2 | ok | ok | 1 hour, 3 options and the 24 hour change rule are right |
+| c17 turn 1 | ok | ok | repair range and warranty are right |
+| c09 turn 2 | ok | ok | no business facts beyond the free estimate |
+| c13 turn 1 | ok | ok | furnace price and financing threshold are right |
+| c49 turn 1 | ok | ok | plan price and benefits are right |
+| c45 turn 1 | ok | ok | warranty text is right |
+| c10 turn 1 | ok | ok | prices and what is included are right |
+| c02 turn 2 | ok | ok | no invented fact, but it repeats the today or tomorrow rule while offering Tuesday (Monday was full); it also cites the booking page by a shortened title |
 
 ## Reliability
 
@@ -86,10 +88,10 @@ I read 10 replies picked at random (seed 42) against the help center. My verdict
 |---|---|---|---|
 | Invalid Claude API key | fixed rule scores the lead, one reply, task for a person, card in Needs Human | used_fallback=True, outcome handoff, stage Needs Human, score 80 (hot), replies sent 1 | yes |
 | GHL API answers with errors (invalid token) | event saved to failed_events, replay finishes it, one reply | first run: status failed, 1 event queued; after replay: status done, 0 left in queue, replies sent 1 | yes |
-| Offered time taken before the customer confirms | no booking on the taken time, the agent offers the next open time | first turn offer_slots; after the time was taken: offer_slots, events at 08:00: 1, events for this customer: 0. | yes |
+| Offered time taken before the customer confirms | no booking on the taken time, the agent offers the next open time | first turn offer_slots; after the time was taken: offer_slots, events at 12:00: 1, events for this customer: 0. | yes |
 | Same message delivered twice at the same moment | one run answers, the other stops as duplicate, one reply | answers ['done', 'duplicate'], replies sent 1 | yes |
 
-In the taken-time test, the taken time had already left the open times list when the customer answered, so the guard in `Decide` caught it. The second check right before booking (`Recheck slot`) covers the case where the time is taken in the seconds between those two calls.
+In the taken-time test, the time had already dropped off the open list, so the guard in `Decide` caught it. The Postgres reservation and `Recheck slot` cover the seconds between those two steps.
 
 ## First run and what I changed
 
@@ -103,7 +105,7 @@ The first full run found real problems, so I fixed them and ran all 50 conversat
 
 Changes:
 
-- The help center now states that any question the chat cannot answer, and any request for a person, goes to the office team, who reply within 1 business day. The prompt already promised this, but only billing questions had it in the help center.
+- The FAQ now states that any question the chat cannot answer, and any request for a person, goes to the office team, who reply within 1 business day. The prompt already promised this, but only billing questions had it in the FAQ.
 - The maintenance plan article title says "maintenance plan", so a question with those words finds it.
 - The ZIP guard now turns every out-of-area conversation into a decline with intent out_of_area, not only the ones where the AI tried to offer times.
 - The prompt says not to add rules, limits or advice the articles do not state.
@@ -114,7 +116,6 @@ Changes:
 - Booking right: the conversation reached a booked visit if and only if the answer key says it should.
 - Intent and tier: the values the agent recorded on the last turn of the conversation.
 - Handoff: any turn that sent the conversation to a person. Recall is over the 6 conversations that should go to a person.
-- Invented claims: Claude Sonnet 5.5 reads every reply next to all 25 help center articles and lists business facts the articles do not support. Visit times from the calendar do not count. The judge is the same model as one of the two candidates, so I also checked 10 replies by hand (above).
-- The demo calendar only has Monday to Saturday, 8 am to 6 pm. When the first day fills up, an emergency gets the first open time, which can be later than the "today or tomorrow" the help center promises. A real shop would add an on-call calendar for after-hours visits.
+- Invented claims: Claude Sonnet 5.5 reads every reply next to all 25 FAQ articles and lists business facts the articles do not support. Visit times from the calendar do not count. The judge is the same model as one of the two candidates, so I also checked 10 replies by hand (above).
 - Cost: the token counts from each Claude call at list prices. GHL, n8n and the embedding service add no per-call cost.
 - Time in the flow: from the webhook call to the logged turn, measured inside n8n. End to end also counts storing the message in GHL and the network.

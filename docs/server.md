@@ -10,7 +10,7 @@ n8n cannot run fastembed, so a small container embeds each question. It joins th
 # from a folder with embed/server.py and embed/Dockerfile
 sudo docker build -t receptionist-embed .
 sudo docker run -d --name receptionist-embed --restart unless-stopped \
-  --network nano_jarvis --memory 400m receptionist-embed
+  --network <your-compose-network> --memory 400m receptionist-embed
 ```
 
 The flow calls `http://receptionist-embed:8000/embed` (`EMBED_URL` in `.env`). The container uses about 230 MB.
@@ -22,7 +22,7 @@ The Postgres credential checks the server certificate. Supabase signs it with it
 1. Download `prod-ca-2021.crt` (Supabase dashboard > Database Settings > SSL Configuration).
 2. Copy it into the n8n data volume:
    ```bash
-   sudo docker cp prod-ca-2021.crt nano-n8n-1:/home/node/.n8n/supabase-ca.crt
+   sudo docker cp prod-ca-2021.crt <n8n-container>:/home/node/.n8n/supabase-ca.crt
    ```
 3. Add one line to the n8n service environment in `docker-compose.yml`:
    ```yaml
@@ -30,4 +30,3 @@ The Postgres credential checks the server certificate. Supabase signs it with it
    ```
 4. `sudo docker compose up -d n8n` (n8n is down for a few seconds).
 
-A backup of the compose file from before the change is next to it (`docker-compose.yml.bak-2026-11-07`).
